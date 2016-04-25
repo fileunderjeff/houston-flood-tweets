@@ -35,7 +35,6 @@ flood_txt = gsub("[ \t]{2,}", "", flood_txt)
 flood_txt = gsub("\n", "", flood_txt)
 flood_txt = gsub("^\\s+|\\s+$", "", flood_txt) 
 
-
 # error handling for lower case conversion
 catch.error = function(x)
 {
@@ -88,7 +87,6 @@ ggplot(sentiment_dataframe, aes(x=emotion)) + geom_bar(aes(y=..count.., fill=emo
 
 # polarity
 ggplot(sentiment_dataframe, aes(x=polarity)) + geom_bar(aes(y=..count.., fill=polarity)) + scale_fill_brewer(palette="Set1") + ggtitle('Sentiment of 15,000+ #houstonflood Tweets') + theme(legend.position='right') + ylab('Number of Tweets') + xlab('Polarity Categories')
-
 
 # word cloud
 flood_emos = levels(factor(sentiment_dataframe$emotion))
