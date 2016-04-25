@@ -1,0 +1,111 @@
+# Load the necessary packages
+library(twitteR)
+library(wordcloud)
+library(RColorBrewer)
+library(plyr)
+library(ggplot2)
+library(sentiment)
+library(httr)
+library(tm) 
+oauth_endpoints("twitter")
+
+## setup twitter auth/app, search twitter,  and fetch text of the tweets
+setup_twitter_oauth(“yourcreds”, “yourcreds”, access_token=NULL, access_secret=NULL)
+flood_tweets = searchTwitter("houstonflood +exclude:retweets", n=20000, since='2016-04-18', until='2016-04-21', lang="en")
+flood_txt = sapply(flood_tweets, function(x) x$getText())
+
+## prepare text for sentiment analysis
+# remove any potential retweets
+flood_txt = gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", flood_txt)
+
+# remove all "@people"
+flood_txt = gsub("@\\w+", "", flood_txt)
+
+# remove all the punctuation
+flood_txt = gsub("[[:punct:]]", "", flood_txt)
+
+# remove numbers
+flood_txt = gsub("[[:digit:]]", "", flood_txt)
+
+# remove html links
+flood_txt = gsub("http\\w+", "", flood_txt)
+
+# remove unnecessary spaces
+flood_txt = gsub("[ \t]{2,}", "", flood_txt)
+flood_txt = gsub("\n", "", flood_txt)
+flood_txt = gsub("^\\s+|\\s+$", "", flood_txt) 
+
+
+# error handling for lower case conversion
+catch.error = function(x)
+{
+# let us create a missing value for test purpose
+y = NA
+# try to catch that error (NA) we just created
+catch_error = tryCatch(tolower(x), error=function(e) e)
+if (!inherits(catch_error, "error"))
+y = tolower(x)
+# check result if error exists, otherwise the function works fine.
+return(y)
+}
+
+# convert to lower case
+flood_txt = sapply(flood_txt, catch.error)
+
+# remove initial search term
+flood_txt = gsub("houstonflood", "", flood_txt)
+
+# remove NAs, if any exist
+flood_txt = flood_txt[!is.na(flood_txt)]
+
+# remove column headings
+names(flood_txt) = NULL
+
+# classify emotion
+flood_class_emo = classify_emotion(flood_txt, algorithm="bayes", prior=1.0)
+
+# fetch emotion category best fit
+emotion = flood_class_emo[,7]
+
+# Replace NA's (if any, generated during classification process) by word “unknown"
+emotion[is.na(emotion)] = "unknown"
+
+# classify polarity in the text
+flood_class_pol = classify_polarity(flood_txt, algorithm="bayes")
+
+# fetch polarity category best_fit
+polarity = flood_class_pol[,4]
+
+# create data frame using emotion category and polarity results earlier obtained
+sentiment_dataframe = data.frame(text=flood_txt, emotion=emotion, polarity=polarity, stringsAsFactors=FALSE)
+
+# rearrange data inside the frame by sorting it
+sentiment_dataframe = within(sentiment_dataframe, emotion <- factor(emotion, levels=names(sort(table(emotion), decreasing=TRUE))))
+
+# plotting options
+# emotions
+ggplot(sentiment_dataframe, aes(x=emotion)) + geom_bar(aes(y=..count.., fill=emotion)) + scale_fill_brewer(palette="Dark2") + ggtitle('Sentiment Analysis of #houstonflood Tweets') + theme(legend.position='right') + ylab('Number of Tweets') + xlab('Emotion Categories')
+
+# polarity
+ggplot(sentiment_dataframe, aes(x=polarity)) + geom_bar(aes(y=..count.., fill=polarity)) + scale_fill_brewer(palette="Set1") + ggtitle('Sentiment of 15,000+ #houstonflood Tweets') + theme(legend.position='right') + ylab('Number of Tweets') + xlab('Polarity Categories')
+
+
+# word cloud
+flood_emos = levels(factor(sentiment_dataframe$emotion))
+n_flood_emos = length(flood_emos)
+flood.emo.docs = rep("", n_flood_emos)
+for (i in 1:n_flood_emos)
+{
+tmp = flood_txt[emotion == flood_emos[i]]
+flood.emo.docs[i] = paste(tmp, collapse=" ")
+}
+# remove english stopwords
+flood.emo.docs = removeWords(flood.emo.docs, stopwords("english"))
+# create corpus
+flood.corpus = Corpus(VectorSource(flood.emo.docs))
+flood.tdm = TermDocumentMatrix(flood.corpus)
+flood.tdm = as.matrix(flood.tdm)
+colnames(flood.tdm) = flood_emos
+# create the word cloud
+comparison.cloud(flood.tdm, colors = brewer.pal(n_flood_emos, "Dark2"),
+scale = c(3,.5), random.order = FALSE, title.size = 1.5)
